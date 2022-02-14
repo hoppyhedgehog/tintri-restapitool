@@ -44,8 +44,8 @@ USAGE
                      FILE FORMAT:
                            username     password     vmstore_ip(or name)
                      EXAMPLE: Filename :/tmp/inputfile
-                           admin        tintri99     10.136.40.27
-                           admin        tintri99     172.16.236.17
+                           admin        mypass99     10.122.20.27
+                           admin        mypass99     10.122.21.20
        -P            Change User Password
        -U <user>    User Name to Change when -P option is specified
        -P "<pass>"  User Password to Change when -P option is specified
@@ -61,10 +61,10 @@ USAGE
 
 # EXAMPLE: Now we establish the web 'cookie' and then we display the VMStore host information
 ```
-# webapitest -u admin -p mypass1 -v 10.136.40.27 -i
-[2022-02-14T11:45:30] [10.136.40.27]  Writing Encrypted Password [U2FsdGVkX1//oLK1myWFdF7vdfn5veKee9aojuQ9Brc=]--> /tmp/.webapitest.encrypted_password_cache.dat
-[2022-02-14T11:45:30] [10.136.40.27]  Setting Cookie for 10.136.40.27 using user admin
-[2022-02-14T11:45:31] [10.136.40.27]  Obtaining BASIC Appliance info --> v310/appliance/default/info
+# webapitest -u admin -p mypass1 -v 10.122.20.27 -i
+[2022-02-14T11:45:30] [10.122.20.27]  Writing Encrypted Password [U2FsdGVkX1//oLK1myWFdF7vdfn5veKee9aojuQ9Brc=]--> /tmp/.webapitest.encrypted_password_cache.dat
+[2022-02-14T11:45:30] [10.122.20.27]  Setting Cookie for 10.122.20.27 using user admin
+[2022-02-14T11:45:31] [10.122.20.27]  Obtaining BASIC Appliance info --> v310/appliance/default/info
 vi{
     currentCapacityGiB: 30004.499574548565
     expansionSupported: true
@@ -86,24 +86,24 @@ vi{
 # EXAMPLE: Displaying VMStore Appliance Info on multiple VMStore hosts
 ``` 
 # cat inputfile
-admin  mypass1     10.122.25.45
+admin  mypass1    10.122.25.45
 admin  mypass1    10.122.25.47
 ```
 
 Now we execute against the inputfile and log the output
 ```
 # webapitest -i -F inputfile
-[2022-02-04T15:56:49] [t7080]  Setting Cookie for t7080 using user admin
-[2022-02-04T15:56:49] [t7080]  Obtaining BASIC Appliance info --> v310/appliance/default/info
-[2022-02-04T15:56:50] [t7080]  Writing results to /tmp/webapitest.t7080_rest-api.output.log
-[2022-02-04T15:56:50] [t880]  Setting Cookie for t880 using user admin
-[2022-02-04T15:56:50] [t880]  Obtaining BASIC Appliance info --> v310/appliance/default/info
-[2022-02-04T15:56:51] [t880]  Writing results to /tmp/webapitest.t880_rest-api.output.log
+[2022-02-04T15:56:49] [10.122.25.45]  Setting Cookie for 10.122.25.45 using user admin
+[2022-02-04T15:56:49] [10.122.25.45]  Obtaining BASIC Appliance info --> v310/appliance/default/info
+[2022-02-04T15:56:50] [10.122.25.45]  Writing results to /tmp/webapitest.10.122.25.45_rest-api.output.log
+[2022-02-04T15:56:50] [10.122.25.47]  Setting Cookie for 10.122.25.47 using user admin
+[2022-02-04T15:56:50] [10.122.25.47]  Obtaining BASIC Appliance info --> v310/appliance/default/info
+[2022-02-04T15:56:51] [10.122.25.47]  Writing results to /tmp/webapitest.10.122.25.47_rest-api.output.log
 ```
 
 Viewing the log output via the results in JSON output
 ```
-# cat /tmp/webapitest.t7080_rest-api.output.log
+# cat /tmp/webapitest.10.122.25.475_rest-api.output.log
 {
     currentCapacityGiB: 30004.499574548565
     expansionSupported: true
@@ -129,11 +129,11 @@ Create User Cookie AND execute -E to set the AES encryption to 256
 ``` 
 # webapitest -u admin -p mypass1 -E 28 vmstore.acme.com
  
-[2022-02-04T16:02:40] [t7080]  Setting Cookie for t7080 using user admin
-[2022-02-04T16:02:41] [t7080]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
-[2022-02-04T16:02:41] [t7080]  Checking the AES Enctyption Type --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type
+[2022-02-04T16:02:40] [vmstore.acme.com]  Setting Cookie for t7080 using user admin
+[2022-02-04T16:02:41] [vmstore.acme.com]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
+[2022-02-04T16:02:41] [vmstore.acme.com]  Checking the AES Enctyption Type --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type
 Encryption Type     28
-[2022-02-04T16:02:42] [t7080]  Writing results to /tmp/webapitest.t7080_rest-api.output.log
+[2022-02-04T16:02:42] [vmstore.acme.com]  Writing results to /tmp/webapitest.vmstore.acme.com_rest-api.output.log
 ```
  
 If the above is successful, now let's try it again on multiple VMStores using the input file with entries
@@ -146,16 +146,16 @@ admin        mypass1     10.122.10.25
 Now we execute with the '-E 28' option
 ```
 # webapitest -E 28 -F inputfile
-[2022-02-04T16:02:40] [t7080]  Setting Cookie for t7080 using user admin
-[2022-02-04T16:02:41] [t7080]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
-[2022-02-04T16:02:41] [t7080]  Checking the AES Enctyption Type --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type
+[2022-02-04T16:02:40] [10.122.10.15]  Setting Cookie for 10.122.10.15 using user admin
+[2022-02-04T16:02:41] [10.122.10.15]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
+[2022-02-04T16:02:41] [10.122.10.15]  Checking the AES Enctyption Type --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type
 Encryption Type     28
-[2022-02-04T16:02:42] [t7080]  Writing results to /tmp/webapitest.t7080_rest-api.output.log
-[2022-02-04T16:02:42] [t880]  Setting Cookie for t880 using user admin
-[2022-02-04T16:02:42] [t880]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
-[2022-02-04T16:02:42] [t880]  Checking the AES Enctyption Type --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type
+[2022-02-04T16:02:42] [10.122.10.15]  Writing results to /tmp/webapitest.10.122.10.15_rest-api.output.log
+[2022-02-04T16:02:42] [10.122.10.25]  Setting Cookie for 10.122.10.25 using user admin
+[2022-02-04T16:02:42] [10.122.10.25]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
+[2022-02-04T16:02:42] [10.122.10.25]  Checking the AES Enctyption Type --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type
 Encryption Type     28
-[2022-02-04T16:02:42] [t880]  Writing results to /tmp/webapitest.t880_rest-api.output.log
+[2022-02-04T16:02:42] [10.122.10.25]  Writing results to /tmp/webapitest.10.122.10.25_rest-api.output.log
 ```
  
 
