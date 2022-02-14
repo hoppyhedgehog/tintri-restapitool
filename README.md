@@ -1,14 +1,133 @@
 # tintri-webapitest
 A public tool using the REST-API for Tintri VMStore Storage Arrays
 
+```
+# chmod 755 webapitest
+```
 
-*(Assuming you already copied the script to a linux/mac/cywgin box AND chmod 755 <webapitest>)*
- 
-In the following example, let's assume the 'admin' password is tintri99 and we are testing with vmstore vmstore.acme.com
- 
-1. Create User Cookie AND test it on one VMstore
+Now we view the script usage:
+```
+USAGE
+[197][root@ben-c7-vm]# ./webapitest
+================================================================
+# SCRIPT TO TEST THE REST-API AND RETURN DATA. Ver:1.8
+================================================================
+# webapitest [args]
+================================================================
+       -c            Clear saved cookie (/tmp/.webapitest.cookie.txt) & saved user info
+       -u <user>    User  (default admin) [cached after 1st iteration]
+       -p <pass>    User  (default tintri99) [cached after 1st iteration]
+       -v <vmstore> [IF NOT on a VMStore] then specify IP or FQDN of VMStore [cached after 1st iteration]
+       -i            Display brief appliance (vmstore) info
+       -a            Display appliance (vmstore) info
+       -h            Display HypervisorConfig Info
+       -d            Display VMStore datastore properties
+       -l            Log Output to file /tmp/ben-c7-vm_rest-api_output.log
+       -r            Obtain VMStore computeResource info
+       -A            Display REST-API-INF
+       -n            Display Notification Policy
+       -g            Display all Service Group Info
+       -1            List all userAccounts
+       -s            Display all Snapshots
+       -S            Display all Active Sessions
+       -C            Display all Current Sessions
+       -H            DO NOT Format JSON Output to make it human readable
+       -E <num>     Encryption Cypher Type
+                     0  - Query (View the Current Encryption Type. Default is RC4)
+                     4  - Set RC4 (Default)
+                     8  - AES128
+                     16 - AES256
+                     28 - RC4, AES128 & AES256
+       -L            Display all License info
+       -T            Display all sessions for user=tintricenter
+       -F <file>    Use Input File for multiple VMStores
+                     FILE FORMAT:
+                           username     password     vmstore_ip(or name)
+                     EXAMPLE: Filename :/tmp/inputfile
+                           admin        tintri99     10.136.40.27
+                           admin        tintri99     172.16.236.17
+       -P            Change User Password
+       -U <user>    User Name to Change when -P option is specified
+       -P "<pass>"  User Password to Change when -P option is specified
+       -N            Obtain VMStore Notification Properties
+       -Q            Strip quotes and commas in output
+       -R "<role>"  User role (admin user is 'ADMIN')
+       -V            Display all VM info
+       -U            Display VMStore StatSummary Output
+       -x            Verbose output
+       -X            Debug (set -x) output
+================================================================
 ``` 
-# webapitest -u admin -p mypassword -E 28 vmstore.acme.com
+
+# EXAMPLE: Now we establish the web 'cookie' and then we display the VMStore host information
+```
+# webapitest -u admin -p mypass1 -v 10.136.40.27 -i
+[2022-02-14T11:45:30] [10.136.40.27]  Writing Encrypted Password [U2FsdGVkX1//oLK1myWFdF7vdfn5veKee9aojuQ9Brc=]--> /tmp/.webapitest.encrypted_password_cache.dat
+[2022-02-14T11:45:30] [10.136.40.27]  Setting Cookie for 10.136.40.27 using user admin
+[2022-02-14T11:45:31] [10.136.40.27]  Obtaining BASIC Appliance info --> v310/appliance/default/info
+vi{
+    currentCapacityGiB: 30004.499574548565
+    expansionSupported: true
+    filesystemId: c2d4435a-ef7a-13f0-8f4c-b6cd88a510d3
+    isAdminPasswordSyncRequired: false
+    isAllFlash: true
+    isExpandable: false
+    isFipsEncryptionEnabled: false
+    modelName: T7080
+    osVersion: 5.2.0.1-11342.55846.24813
+    outOfBoxCompleted: true
+    productId: ZC5
+    serialNumber: 0428-2108-147
+    typeId: com.tintri.api.rest.v310.dto.domain.beans.hardware.ApplianceInfo
+}
+```
+
+
+# EXAMPLE: Displaying VMStore Appliance Info on multiple VMStore hosts
+``` 
+# cat inputfile
+admin  mypass1     10.122.25.45
+admin  mypass1    10.122.25.47
+```
+
+Now we execute against the inputfile and log the output
+```
+# webapitest -i -F inputfile
+[2022-02-04T15:56:49] [t7080]  Setting Cookie for t7080 using user admin
+[2022-02-04T15:56:49] [t7080]  Obtaining BASIC Appliance info --> v310/appliance/default/info
+[2022-02-04T15:56:50] [t7080]  Writing results to /tmp/webapitest.t7080_rest-api.output.log
+[2022-02-04T15:56:50] [t880]  Setting Cookie for t880 using user admin
+[2022-02-04T15:56:50] [t880]  Obtaining BASIC Appliance info --> v310/appliance/default/info
+[2022-02-04T15:56:51] [t880]  Writing results to /tmp/webapitest.t880_rest-api.output.log
+```
+
+Viewing the log output via the results in JSON output
+```
+# cat /tmp/webapitest.t7080_rest-api.output.log
+{
+    currentCapacityGiB: 30004.499574548565
+    expansionSupported: true
+    filesystemId: c2d4435a-ef7a-13f0-8f4c-b6cd88a510d3
+    isAdminPasswordSyncRequired: false
+    isAllFlash: true
+    isExpandable: false
+    isFipsEncryptionEnabled: false
+    modelName: T7080
+    osVersion: 5.2.0.1-11342.55846.24813
+    outOfBoxCompleted: true
+    productId: ZC5
+    serialNumber: 0428-2108-147
+    typeId: com.tintri.api.rest.v310.dto.domain.beans.hardware.ApplianceInfo
+}
+``` 
+ 
+
+ 
+In the following example, let's assume the 'admin' password is mypass1  and we are testing with vmstore vmstore.acme.com
+ 
+Create User Cookie AND execute -E to set the AES encryption to 256
+``` 
+# webapitest -u admin -p mypass1 -E 28 vmstore.acme.com
  
 [2022-02-04T16:02:40] [t7080]  Setting Cookie for t7080 using user admin
 [2022-02-04T16:02:41] [t7080]  Setting the AES Enctyption Type to 28 --> v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=28&persist=true
@@ -17,14 +136,14 @@ Encryption Type     28
 [2022-02-04T16:02:42] [t7080]  Writing results to /tmp/webapitest.t7080_rest-api.output.log
 ```
  
-2. IF the above is successful, lets try it using the input file with entries
+If the above is successful, now let's try it again on multiple VMStores using the input file with entries
  ```
 # cat inputfile
 admin        mypass1     10.122.10.15
 admin        mypass1     10.122.10.25
 ```
 
-  Now we execute
+Now we execute with the '-E 28' option
 ```
 # webapitest -E 28 -F inputfile
 [2022-02-04T16:02:40] [t7080]  Setting Cookie for t7080 using user admin
@@ -39,4 +158,4 @@ Encryption Type     28
 [2022-02-04T16:02:42] [t880]  Writing results to /tmp/webapitest.t880_rest-api.output.log
 ```
  
-![image](https://user-images.githubusercontent.com/36774738/153922679-87dc233a-8f72-4073-a028-8cc6543c2b64.png)
+
