@@ -5,7 +5,7 @@
 PS4='${LINENO}: '
 ###################################################################
 ###################################################################
-# Script by Ben Patridge (bpatridge@tintri.com) to quickly
+# Script by Ben Patridge (ben.patridge@gmail.com) to quickly
 # test the WEB API on a VMstore(locally)
 ###################################################################
 # THIS IS A USE AT YOUR OWN DESCRETION EXAMPLE SCRIPT USING THE
