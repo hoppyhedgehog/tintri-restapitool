@@ -59,7 +59,7 @@ USAGE
 ================================================================
 ``` 
 
-# EXAMPLE: Now we establish the web 'cookie' and then we display the VMStore host information
+# Now we establish the web 'cookie' and then we display the VMStore host information
 ```
 # webapitest -u admin -p mypass1 -v 10.122.20.27 -i
 [2022-02-14T11:45:30] [10.122.20.27]  Writing Encrypted Password [U2FsdGVkX1//oLK1myWFdF7vdfn5veKee9aojuQ9Brc=]--> /tmp/.webapitest.encrypted_password_cache.dat
@@ -83,7 +83,7 @@ vi{
 ```
 
 
-# EXAMPLE: Displaying VMStore Appliance Info on multiple VMStore hosts
+# Displaying VMStore Appliance Info on multiple VMStore hosts
 ``` 
 # cat inputfile
 admin  mypass1    10.122.25.45
