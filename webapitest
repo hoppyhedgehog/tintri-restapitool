@@ -1,19 +1,20 @@
 #!/bin/bash
 ###################################################################
-#LAST MODIFIED: 2022-02-14 11:49:23
+#LAST MODIFIED: 2022-02-14 16:31:26
 ###################################################################
 PS4='${LINENO}: '
 ###################################################################
 ###################################################################
-# Script by Ben Patridge (ben.patridge@gmail.com) to quickly
-# test the WEB API on a VMstore(locally)
+# Script by Ben Patridge to quickly test the TINTRI VMStore
+# REST-API From a client (or locally on a VMStore)
+# and perform some basic maintenance functions
 ###################################################################
 # THIS IS A USE AT YOUR OWN DESCRETION EXAMPLE SCRIPT USING THE
 # REST-API. OFFICIAL DOCUMENTATION IS ON 
 # https://support.tintri.com/download/ 
 # (look for Developer Documentation --> Tintri REST API Documentation)
 ###################################################################
-# GLOBAL VARIABLES
+# DECLARE GLOBAL VARIABLES
 ###################################################################
 export PATH=$PATH:/usr/tintri/bin:/usr/local/tintri/bin:/opt/tintri
 VER=2.2
@@ -28,10 +29,12 @@ PASSFILE=/tmp/.${SCRIPT}.encrypted_password_cache.dat
 TMP_INPUTFILE=/tmp/.${SCRIPT}.inputfile.dat
 stub=/tmp/.${SCRIPT}.stub
 human=1
+default_user='admin'			# used for example purposes
+default_pass='mypa$$1'			# used for example purposes
 line="================================================================"
 ###################################################################
-# TESTING TO SEE IF THIS SCRIPT IS BEING RUN ON A VMSTORE, OR A 
-# LINUX/MAC/Windows(Cygwin) Client
+# CHECK TO DETERMINE IF THIS SCRIPT IS BEING RUN ON A VMSTORE
+# OR FROM AN EXTERNAL CLIENT
 ###################################################################
 if [ -f /usr/local/tintri/bin/product-serial ] &&  [  -f /var/lock/subsys/platform ]; then
 	serial=$(product-serial)
@@ -40,12 +43,7 @@ else
 	serial=$(hostname)
 fi
 ###################################################################
-###################################################################
-###################################################################
-
-
-###################################################################
-# FUNCTIONS
+# BEGIN GLOBAL FUNCTIONS
 ###################################################################
 clear_data() {
 	for file in "$cookie" $host_cache $user_cache $PASSFILE $stub $TMP_INPUTFILE; do
@@ -60,7 +58,7 @@ get_serial() {
 			VMSTORE=$serial
 		fi
 		cont=0
-		logfile=/tmp/${SCRIPT}.${serial}_rest-api.output.log
+		logfile=/tmp/${SCRIPT}.${VMSTORE}_rest-api.output.log
 	else
 		VMSTORE="localhost"
 		serial=$(grep PRODUCT_SERIAL /var/lock/subsys/platform|cut -d= -f2)
@@ -119,6 +117,8 @@ check_sed() {
 }
 
 ############################################################
+# SCRIPT USAGE
+############################################################
 usage(){
 	get_serial
 	if [ ! -z $err ]; then
@@ -132,8 +132,8 @@ usage(){
 	echo "# $SCRIPT [args]"
 	echo $line
 	echo "	-c		Clear saved cookie ($cookie) & saved user info"
-	echo "	-u <user>	User  (default admin) [cached after 1st iteration]"
-	echo "	-p <pass>	User  (default tintri99) [cached after 1st iteration]"
+	echo "	-u <user>	User  (default $default_user) [cached after 1st iteration]"
+	echo "	-p <pass>	User  (default $default_pass) [cached after 1st iteration]"
 	echo "	-v <vmstore>	[IF NOT on a VMStore] then specify IP or FQDN of VMStore [cached after 1st iteration]"
 	echo "	-i		Display brief appliance (vmstore) info"
 	echo "	-a		Display appliance (vmstore) info"
@@ -161,14 +161,14 @@ usage(){
 	echo "			FILE FORMAT:"
 	echo "				username	password	vmstore_ip(or name)"
 	echo "			EXAMPLE: Filename :/tmp/inputfile"
-	echo "				admin		tintri99	10.136.40.27"
-	echo "				admin		tintri99	172.16.236.17"
+	echo "				$default_user		$default_pass	10.122.20.45"
+	echo "				$default_user		$default_pass	10.122.20.46"
 	echo "	-P		Change User Password"
 	echo "	-U <user>	User Name to Change when -P option is specified"
 	echo "	-P \"<pass>\"	User Password to Change when -P option is specified"
 	echo "	-N 		Obtain VMStore Notification Properties"
 	echo "	-Q 		Strip quotes and commas in output"
-	echo "	-R \"<role>\"	User role (admin user is 'ADMIN')"
+	echo "	-R \"<role>\"	User role ($default_user user is 'ADMIN')"
 	echo "	-V		Display all VM info"
 	echo "	-U		Display VMStore StatSummary Output"
 	echo "	-x		Verbose output"
