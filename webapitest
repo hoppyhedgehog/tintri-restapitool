@@ -6,7 +6,7 @@ PS4='${LINENO}: '
 ###################################################################
 ###################################################################
 # Script by Ben Patridge to quickly test the TINTRI VMStore
-# REST-API From a client (or locally on a VMStore)
+# REST-API From a client (or locall(
 # and perform some basic maintenance functions
 ###################################################################
 # THIS IS A USE AT YOUR OWN DESCRETION EXAMPLE SCRIPT USING THE
@@ -17,7 +17,7 @@ PS4='${LINENO}: '
 # DECLARE GLOBAL VARIABLES
 ###################################################################
 export PATH=$PATH:/usr/tintri/bin:/usr/local/tintri/bin:/opt/tintri
-VER=2.2
+VER=2.3
 SCRIPT=$(basename ${BASH_SOURCE[0]})
 cookie=/tmp/.${SCRIPT}.cookie.txt
 VMSTORE=
@@ -29,8 +29,8 @@ PASSFILE=/tmp/.${SCRIPT}.encrypted_password_cache.dat
 TMP_INPUTFILE=/tmp/.${SCRIPT}.inputfile.dat
 stub=/tmp/.${SCRIPT}.stub
 human=1
-default_user='admin'			# used for example purposes
-default_pass='mypa$$1'			# used for example purposes
+default_user=admin
+default_pass=mypa$$1
 line="================================================================"
 ###################################################################
 # CHECK TO DETERMINE IF THIS SCRIPT IS BEING RUN ON A VMSTORE
