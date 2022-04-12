@@ -3,6 +3,17 @@
 #LAST MODIFIED: 2022-04-12 13:05:33
 #USING [VIB] https://github.com/hoppyhedgehog/vib
 ###################################################################
+# webapitest available via: https://github.com/hoppyhedgehog/tintri-webapitest/
+###################################################################
+# Script by Ben Patridge to quickly test the TINTRI $DESTNAME
+# REST-API From a client (or locally)
+# and perform some basic maintenance functions
+###################################################################
+# THIS IS A USE AT YOUR OWN DESCRETION EXAMPLE SCRIPT USING THE
+# REST-API. OFFICIAL DOCUMENTATION IS ON 
+# https://support.tintri.com/download/ 
+# (look for Developer Documentation --> Tintri REST API Documentation)
+###################################################################
 PS4='${LINENO}: '
 ###################################################################
 # -*- coding: utf-8 -*-
@@ -27,15 +38,6 @@ PS4='${LINENO}: '
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
-###################################################################
-# Script by Ben Patridge to quickly test the TINTRI $DESTNAME
-# REST-API From a client (or locally)
-# and perform some basic maintenance functions
-###################################################################
-# THIS IS A USE AT YOUR OWN DESCRETION EXAMPLE SCRIPT USING THE
-# REST-API. OFFICIAL DOCUMENTATION IS ON 
-# https://support.tintri.com/download/ 
-# (look for Developer Documentation --> Tintri REST API Documentation)
 ###################################################################
 # DECLARE GLOBAL VARIABLES
 ###################################################################
