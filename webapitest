@@ -1,12 +1,35 @@
 #!/bin/bash
 ###################################################################
-#LAST MODIFIED: 2022-02-14 16:31:26
+#LAST MODIFIED: 2022-04-12 13:05:33
+#USING [VIB] https://github.com/hoppyhedgehog/vib
 ###################################################################
 PS4='${LINENO}: '
 ###################################################################
+# -*- coding: utf-8 -*-
+#
+# The MIT License (MIT)
+#
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
 ###################################################################
-# Script by Ben Patridge to quickly test the TINTRI VMStore
-# REST-API From a client (or locall(
+# Script by Ben Patridge to quickly test the TINTRI $DESTNAME
+# REST-API From a client (or locally)
 # and perform some basic maintenance functions
 ###################################################################
 # THIS IS A USE AT YOUR OWN DESCRETION EXAMPLE SCRIPT USING THE
@@ -17,23 +40,31 @@ PS4='${LINENO}: '
 # DECLARE GLOBAL VARIABLES
 ###################################################################
 export PATH=$PATH:/usr/tintri/bin:/usr/local/tintri/bin:/opt/tintri
-VER=2.3
+VER=3.0
 SCRIPT=$(basename ${BASH_SOURCE[0]})
-cookie=/tmp/.${SCRIPT}.cookie.txt
-VMSTORE=
-api="api/v310"
+ROOTDIR=/tmp/webapitest_data
+cookie=$ROOTDIR/.${SCRIPT}.cookie.txt
+HOST=
+API_VERSION="v310"				# Current Rest API Version 
 dbase="$api/datastore/default"
-user_cache=/tmp/.${SCRIPT}.user_cache.dat
-host_cache=/tmp/.${SCRIPT}.host_cache.dat
-PASSFILE=/tmp/.${SCRIPT}.encrypted_password_cache.dat
-TMP_INPUTFILE=/tmp/.${SCRIPT}.inputfile.dat
-stub=/tmp/.${SCRIPT}.stub
+user_cache=$ROOTDIR/.${SCRIPT}.user_cache.dat
+host_cache=$ROOTDIR/.${SCRIPT}.host_cache.dat
+PASSFILE=$ROOTDIR/.${SCRIPT}.encrypted_password_cache.dat
+TMP_INPUTFILE=$ROOTDIR/.${SCRIPT}.inputfile.dat
+stubcurl=$ROOTDIR/.${SCRIPT}.stubcurl		#tempfile used to cache curl results
 human=1
-default_user=admin
-default_pass=mypa$$1
+default_user='admin'
+default_pass='mypa$$1'
+COOKIE_RETENTION_TIME=480			#8 Hour Cookie Retention
 line="================================================================"
+DESTNAME="(VMSTORE/TGC)"
+MYHOST=$(hostname|tr "[:lower:]" "[:upper:]"|cut -d. -f1)
 ###################################################################
-# CHECK TO DETERMINE IF THIS SCRIPT IS BEING RUN ON A VMSTORE
+if [ ! -d $ROOTDIR ]; then
+	mkdir -p $ROOTDIR &>/dev/null
+fi
+###################################################################
+# CHECK TO DETERMINE IF THIS SCRIPT IS BEING RUN ON A HOST
 # OR FROM AN EXTERNAL CLIENT
 ###################################################################
 if [ -f /usr/local/tintri/bin/product-serial ] &&  [  -f /var/lock/subsys/platform ]; then
@@ -45,22 +76,22 @@ fi
 ###################################################################
 # BEGIN GLOBAL FUNCTIONS
 ###################################################################
-clear_data() {
-	for file in "$cookie" $host_cache $user_cache $PASSFILE $stub $TMP_INPUTFILE; do
-		rm -f $file 2>/dev/null
+clear_cache() {
+	if [ -z $1 ]; then
+		writelog "Clearing saved cookie --> $cookie"
+	fi
+	for filename in $cookie $host_cache $user_cache $PASSFILE $stubcurl $TMP_INPUTFILE; do
+		rm -f $filename 2>/dev/null
 	done
 }
 ############################################################
 get_serial() {
 	if [ ! -z $not_vmstore ]; then
 		serial=$(hostname)
-		if [ -z $VMSTORE ]; then
-			VMSTORE=$serial
-		fi
 		cont=0
-		logfile=/tmp/${SCRIPT}.${VMSTORE}_rest-api.output.log
+		logfile=/tmp/${SCRIPT}.${HOST}_rest-api.output.log
 	else
-		VMSTORE="localhost"
+		HOST="localhost"
 		serial=$(grep PRODUCT_SERIAL /var/lock/subsys/platform|cut -d= -f2)
 		if [ -z "$serial" ]; then
 			local serial=$(product-serial)
@@ -70,6 +101,31 @@ get_serial() {
 			"0")      cont="a";;
 			"1")      cont="b";;
 		esac
+	fi
+}
+############################################################
+check_file_time() {
+        if [  -f "$1" ]; then
+                c=`find  $1 -type f -mmin +$COOKIE_RETENTION_TIME |wc -c`
+                if [ $c !=  0 ]; then
+                        echo 1
+                else
+                        echo 0
+                fi
+        else
+                echo 1
+        fi
+}
+############################################################
+verify_user() {
+	arg=$(echo "$1"|tr "[:lower:]" "[:upper:]")
+	writelog "ARE YOU SURE YOU WANT TO $arg ?[n|Y]"
+	read ans
+	if [ "x$ans" != "xY" ] || [ "x$ans" != "xYES" ]; then	
+		writelog "Exiting .."
+		exit 1
+	else
+		writelog "Confirmed. Proceeding ..."
 	fi
 }
 ############################################################
@@ -92,7 +148,7 @@ setpass() {
         local pass="$1"
         local temp_pass=$(echo -e $pass|sed 's/^[ \t]*//;s/[ \t]*$//')
         ENCRYPTED_PASSWORD=$(encrypt_password $temp_pass)
-        writelog "Writing Encrypted Password [$ENCRYPTED_PASSWORD]--> $PASSFILE" 1
+        writelog "Writing Encrypted Password [$ENCRYPTED_PASSWORD] --> $PASSFILE" 1
         printf $ENCRYPTED_PASSWORD >$PASSFILE
 }
 ############################################################
@@ -103,12 +159,12 @@ writelog() {
 	else
 		local ct=
 	fi
-        dt="[$REAL_DATETIME] [$VMSTORE] $ct"
+        dt="[$REAL_DATETIME] [$MYHOST] $ct"
 	echo "$dt $1 "
 }
 ############################################################
 check_sed() {
-	PRE_SED="sed -e '1,/^Server:/d'|sed '/^$/d'"
+	PRE_SED="sed '/{/,\$!d'|sed '/^$/d'"
         if [ !  -z $noquote ]; then
                 POST_SED='sed "s:\x1B\\\[\[0-9;\]\*[a-zA-Z]::g"'
 	else
@@ -131,59 +187,137 @@ usage(){
 	echo $line
 	echo "# $SCRIPT [args]"
 	echo $line
-	echo "	-c		Clear saved cookie ($cookie) & saved user info"
 	echo "	-u <user>	User  (default $default_user) [cached after 1st iteration]"
 	echo "	-p <pass>	User  (default $default_pass) [cached after 1st iteration]"
-	echo "	-v <vmstore>	[IF NOT on a VMStore] then specify IP or FQDN of VMStore [cached after 1st iteration]"
-	echo "	-i		Display brief appliance (vmstore) info"
-	echo "	-a		Display appliance (vmstore) info"
-	echo "	-h		Display HypervisorConfig Info"
-	echo "	-d		Display VMStore datastore properties"
-	echo "	-l		Log Output to file /tmp/${serial}_rest-api_output.log"
-	echo "	-r		Obtain VMStore computeResource info"
+	echo "	-h <host>	VMStore or TGC [IF NOT on a $DESTNAME] then specify IP or FQDN of $DESTNAME [cached after 1st iteration]"
+	echo $line
+	echo "[OPTIONS]"
+	echo $line
+	echo "	-a		Display All VMstore Appliance Details"
 	echo "	-A		Display REST-API-INF"
-	echo "	-n		Display Notification Policy"
-	echo "	-g		Display all Service Group Info"
-	echo "	-1		List all userAccounts"
-	echo "	-s		Display all Snapshots"
-	echo "	-S		Display all Active Sessions"
-	echo "	-C		Display all Current Sessions"
-	echo "	-H		DO NOT Format JSON Output to make it human readable"
+	echo "	-B		Option to Generate a Support Bundle"
+	echo "			0  - Generate a 'nightly' support bundle(smaller)"
+	echo "			1  - Generate a support bundle (full)"
+	echo "	-c		Clear saved cookie ($cookie) & cached host & encrypted password info"
+	echo "	-d		Display $DESTNAME datastore properties"
+	echo "	-e <num>	Get various VMStore Environmental Properties"
+	echo "			0  - DNS, IP and Interface Configuration"
+	echo "			1  - Disk Encryption Information"
+	echo "			2  - Display all License Info"
+	echo "			3  - Display VMStore Temperature Information"
+	echo "			4  - Display VMStore Date and Time"
+	echo "			5  - Display VMStore Autosupport Settings"
+	echo "			6  - Display Hypervisor Configuration Information"
+	echo "			7  - Display IPMI Configuration"
+	echo "			8  - Display LACP Configuration"
+	echo "			9  - Display VMStore Upgrade information"
+	echo "			10 - Display VMStore Cluster Configuration"
+	echo "			11 - Display VMstore Replication Configuration"
+	echo "			12 - Display VMstore SMB Settings"
+	echo "			13 - Display VMstore System Properties"
 	echo "	-E <num>	Encryption Cypher Type"
 	echo "			0  - Query (View the Current Encryption Type. Default is RC4)"
 	echo "			4  - Set RC4 (Default)"
 	echo "			8  - AES128"
 	echo "			16 - AES256"
 	echo "			28 - RC4, AES128 & AES256"
-	echo "	-L		Display all License info"
-	echo "	-T		Display all sessions for user=tintricenter"
-	echo "	-F <file>	Use Input File for multiple VMStores"
+	echo "	-F <file>	Use Input File for multiple $DESTNAME"
 	echo "			FILE FORMAT:"
 	echo "				username	password	vmstore_ip(or name)"
 	echo "			EXAMPLE: Filename :/tmp/inputfile"
 	echo "				$default_user		$default_pass	10.122.20.45"
 	echo "				$default_user		$default_pass	10.122.20.46"
+	echo "	-g		Display all Service Group Info"
+	echo "	-H		Initiate a Controller Failover (Prompted)"
+	echo "	-i		Display brief VMStore Appliance info"
+	echo "	-j		[TGC] Display All VMStore Info"
+	echo "	-J		DO NOT Format JSON Output to make it human readable"
+	echo "	-l		Log Output to file /tmp/${serial}_rest-api_output.log"
+	echo "	-L		Display VMStore current Operational Status"
+	echo "	-m <num>	Display VMStore Statistic information"
+	echo "			0  - Display VMStore Historic StatSummary Datastore performance info"
+	echo "			1  - Display VMStore real-time data store performance data"
+	echo "	-n		Display Notification Policy"
+	echo "	-N 		Obtain $DESTNAME Notification Properties"
+	echo "	-Q 		Strip quotes and commas in output"
+	echo "	-r <num>	Obtain VMStore Host & Hypervisor Resource Information"
+	echo "			0 - Display all Host resources, resource pool, cluster,etc"
+	echo "			1 - Display VMStore Host Resources"
+	echo "			2 - Display all Hypervisor Datastores"
+	echo "			3 - Display all Hypervisor Manager Configuration"
+	
+	echo "	-R \"<role>\"	User role ($default_user user is 'ADMIN')"
+	echo "	-1		List all userAccounts"
+	echo "	-s		Display all Snapshots"
+	echo "	-S <num>	Display Session Information"
+	echo "			0 - Display ALL Active Sessions"
+	echo "			1 - Display all sessions for user=tintricenter"
+	echo "			2 - Display Current Sessions"
+	echo "	-T		Display all sessions for user=tintricenter"
+	echo "	-V		Display all VM info"
+	echo "	-W		Display all SMB fileShares and properties"
+	echo "	-x		Verbose output"
+	echo "	-X		Debug (set -x) output"
+	echo "	-z		Use current cached user/pass to re-authenticate"
+	echo $line
+	echo "ADDITIONAL ARGS"
+	echo $line
 	echo "	-P		Change User Password"
 	echo "	-U <user>	User Name to Change when -P option is specified"
 	echo "	-P \"<pass>\"	User Password to Change when -P option is specified"
-	echo "	-N 		Obtain VMStore Notification Properties"
-	echo "	-Q 		Strip quotes and commas in output"
-	echo "	-R \"<role>\"	User role ($default_user user is 'ADMIN')"
-	echo "	-V		Display all VM info"
-	echo "	-U		Display VMStore StatSummary Output"
-	echo "	-x		Verbose output"
-	echo "	-X		Debug (set -x) output"
+	echo $line
+	echo "EXAMPLES"
+	echo $line
+	echo  "	EXAMPLE(1):   (Query VMStore First Iteration):"
+	echo -e "		# $SCRIPT -u $default_user -p $default_pass -h vmstore.acme.com -i\n"
+	echo "	EXAMPLE(2):   (If using same VMStore the user/pass is cached)"
+	echo -e "		# $SCRIPT -a\n"
+	echo "	EXAMPLE(3):   (Using input file to batch gather Vmstore info (-i))"
+	echo "		# $SCRIPT -F /tmp/inputfile -i"
 	echo $line
 	exit
 }
 ############################################################
+check_cookie() {
+        if [ $(grep -q "Authentication failed" $cookie; echo $?) == 0 ]; then
+                writelog "ERROR: Invalid Credentials Used."
+		clear_cache
+                exit
+        fi
+}
+############################################################
 setcookie() {
-	writelog "Setting Cookie for $VMSTORE using user $USERNAME"
-
+	writelog "Setting Cookie for $HOST using user $USERNAME"
 	if [ -z $verbose ]; then
-		(curl -i -k -X POST -H 'Content-Type: application/json' -d '{"username":"'$USERNAME'", "typeId":"com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials", "password":"'$DECRYPTED_PASSWORD'"}' https://$VMSTORE/${api}/session/login 2>/dev/null > $cookie) >/dev/null 2>&1
+		(curl -i -k -X POST -H 'Content-Type: application/json' -d '{"username":"'$USERNAME'", "typeId":"com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials", "password":"'$DECRYPTED_PASSWORD'"}' ${API_BASE_URL}/session/login 2>/dev/null > $cookie) >/dev/null 2>&1
 	else
-		curl -i -k -X POST -H 'Content-Type: application/json' -d '{"username":"'$USERNAME'", "typeId":"com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials", "password":"'$DECRYPTED_PASSWORD'"}' https://$VMSTORE/${api}/session/login 2>/dev/null | tee -a $cookie
+		curl -i -k -X POST -H 'Content-Type: application/json' -d '{"username":"'$USERNAME'", "typeId":"com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials", "password":"'$DECRYPTED_PASSWORD'"}' ${API_BASE_URL}/session/login 2>/dev/null | tee -a $cookie
+	fi
+	check_cookie
+}
+############################################################
+write_stub() {
+	if [ -f $stubcurl ]; then
+		cat $stubcurl >$logfile 2>&1
+	fi
+}
+############################################################
+check_stub () {
+	if [ $(grep -q -m1 "ERR-API" $stubcurl; echo $?) == 0 ]; then
+		writelog "Session Invalid!"
+		if [ -f  $host_cache ] && [ -f $user_cache ] && [ -f  $PASSFILE ]; then
+			writelog "Attempting to re-establish cookie."
+			check_user_data
+			setcookie
+			writelog "Retry command.."
+		else
+			writelog "You must enter the admin user and password via \"\# $SCRIPT -u <user> -p '<password>' <options>\" to continue."
+			clear_cache
+		fi
+		local e=1
+	fi
+	if [ ! -z $1 ] && [ ! -z $e ] ; then
+		exit
 	fi
 }
 ############################################################
@@ -191,35 +325,40 @@ put_query(){
         local url="$1"
         local message="$2"
         local human=$3
-        writelog "$message --> $url"
+        writelog "$message --> ${API_BASE_URL}/$url"
         if  [ "x$human" == "x2" ]; then
                 nosed=1
         fi
 
         check_sed
-
         if [ ! -z $verbose ]; then
-                                echo curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+                                echo curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
         fi
         if [ ! -z $nosed ]; then
                 if [ -z $logtofile ]; then
-                        curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null
+                        curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |tee $stubcurl 
                 else
-                        (curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/nul ) >$logfile 2>&1
+                        (curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/nul ) >$stubcurl 2>&1
+			write_stub
                 fi
+		check_stub
         elif [ ! -z $human ]; then
                 if [ -z $logtofile ]; then
 
-                        curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+                        curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null |tee $stubcurl
                 else
-                        (curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null) >$logfile 2>&1
+                        (curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null) >$stubcurl 2>&1
+			write_stub
                 fi
+		check_stub
         else
                 if [ -z $logtofile ]; then
-                        curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+                        curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null |tee $stubcurl
                 else
-                        (curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$logfile 2>&1
+                        (curl -i -k -X PUT -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$stubcurl 2>&1
+			write_stub
                 fi
+		check_stub
         fi
 
 }
@@ -230,48 +369,55 @@ get_query(){
 	local message="$2"
 	local human=$3
 	local arg=$4
-	writelog "$message --> $url"
+	if  [ "x$message" != "xq" ]; then
+		writelog "$message --> ${API_BASE_URL}/$url"
+	fi
 	if  [ "x$human" == "x2" ]; then
 		nosed=1
 	elif [ "x$human" == "x3" ]; then
 		brief=1
 	fi
-
 	check_sed
 	if [ ! -z $verbose ]; then
-				echo curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+				echo curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
 	fi
+
 	if [ ! -z $nosed ]; then
 		if [ -z $logtofile ]; then
-        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null 
+        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null  |tee $stubcurl
 		else
-        		(curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/nul ) >$logfile 2>&1
+        		(curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/nul ) >$stubcurl 2>&1
+			write_stub
 		fi
+		check_stub
 	elif [ ! -z $brief ]; then
-        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED >$stub 2>&1
-			if [ $(grep -q "[a-z0-9]" $stub; echo $?) == 0  ]; then
+        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED >$stubcurl 2>&1
+			check_stub 1
+			if [ $(grep -q "[a-z0-9]" $stubcurl; echo $?) == 0  ]; then
 				if [ ! -z "$arg" ]; then
 					printf "$arg\t" 
 				fi
-				cat $stub |python -m json.tool |eval $POST_SED 2>/dev/null |tee -a $logfile
+				cat $stubcurl |python -m json.tool |eval $POST_SED 2>/dev/null |tee -a $logfile
 			else
 				echo "No Results Found" |tee -a $logfile
 			fi
 	elif [ ! -z $human ]; then
 		if [ -z $logtofile ]; then
-
-        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null |tee $stubcurl
 		else
-        		(curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null) >$logfile 2>&1
+        		(curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null) >$stubcurl 2>&1
+			write_stub
 		fi
+		check_stub
 	else
 		if [ -z $logtofile ]; then
-        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+        		curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null |tee $stubcurl
 		else
-			(curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$logfile 2>&1
+			(curl -i -k -X GET -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$stubcurl 2>&1
+			write_stub
 		fi
+		check_stub
 	fi
-
 }
 ############################################################
 reset_query(){
@@ -286,14 +432,15 @@ reset_query(){
 	role=$(echo $role|tr "[:lower:]" "[:upper:]")
 	rolel=$(echo $role|tr "[:upper:]" "[:lower:]")
 	local ver="v310.121"
-	writelog "$message --> $url"
-
-	echo curl -k -i -X POST -H 'Content-Type: application/json' -b $cookie -d '{"typeId": "com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials","newPassword":"'$newpass'","password":"'$DECRYPTED_PASSWORD'","username":"'$USERNAME'","role":"'$rolel',"roleNames":"'$role'"}' https://$VMSTORE/$api/userAccount/resetPassword 2>/dev/null |eval $PRE_SED 2>/dev/null
+	writelog "$message --> ${API_BASE_URL}/$url"
+	if [ ! -z $verbose ]; then
+		echo curl -k -i -X POST -H 'Content-Type: application/json' -b $cookie -d '{"typeId": "com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials","newPassword":"'$newpass'","password":"'$DECRYPTED_PASSWORD'","username":"'$USERNAME'","role":"'$rolel',"roleNames":"'$role'"}' ${API_BASE_URL}/userAccount/resetPassword 2>/dev/null |eval $PRE_SED 2>/dev/null
+	fi
 
 	if [ -z $logtofile ]; then
-	curl -k -i -X POST -H 'Content-Type: application/json' -b $cookie -d '{"typeId": "com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials","newPassword":"'$newpass'","password":"'$DECRYPTED_PASSWORD'","username":"'$USERNAME'","role":"'$rolel',"roleNames":"'$role'"}' https://$VMSTORE/$api/userAccount/resetPassword 2>/dev/null |eval $PRE_SED 2>/dev/null
+	curl -k -i -X POST -H 'Content-Type: application/json' -b $cookie -d '{"typeId": "com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials","newPassword":"'$newpass'","password":"'$DECRYPTED_PASSWORD'","username":"'$USERNAME'","role":"'$rolel',"roleNames":"'$role'"}' ${API_BASE_URL}/userAccount/resetPassword 2>/dev/null |eval $PRE_SED 2>/dev/null
 	else
-	(curl -k -i -X POST -H 'Content-Type: application/json' -b $cookie -d '{"typeId": "com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials","newPassword":"'$newpass'","password":"'$DECRYPTED_PASSWORD'","username":"'$USERNAME'","role":"'$rolel',"roleNames":"'$role'"}' https://$VMSTORE/$api/userAccount/resetPassword 2>/dev/null |eval $PRE_SED 2>/dev/null  )>$logfile 2>&1
+	(curl -k -i -X POST -H 'Content-Type: application/json' -b $cookie -d '{"typeId": "com.tintri.api.rest.vcommon.dto.rbac.RestApiCredentials","newPassword":"'$newpass'","password":"'$DECRYPTED_PASSWORD'","username":"'$USERNAME'","role":"'$rolel',"roleNames":"'$role'"}' ${API_BASE_URL}/userAccount/resetPassword 2>/dev/null |eval $PRE_SED 2>/dev/null  )>$logfile 2>&1
 	fi
 
 	if [ $? != 0 ]; then
@@ -305,32 +452,36 @@ post_query(){
 	local url="$1" 
 	local message="$2"
 	local human=$3
-	writelog "$message --> $url"
+	writelog "$message --> ${API_BASE_URL}/$url"
 	if [ ! -z $human ]; then
 		if [ -z $logtofile ]; then
-        		curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+        		curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null |tee $stubcurl
 		else
-        		(curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$logfile 2>&1
+        		(curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$stubcurl 2>&1
+			write_stub
 		fi
+		check_stub
 	else
 		if [ -z $logtofile ]; then
-      	  		curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null
+      	  		curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null|tee $stubcurl
 		else
-        		(curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$logfile 2>&1
+        		(curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED | python -m json.tool |eval $POST_SED 2>/dev/null ) >$stubcurl 2>&1
+			write_stub
 		fi
+		check_stub
 	fi
 
 }
 ############################################################
 build_array() {
 	USERNAME_ARR+=($(echo $USERNAME))
-	VMSTORE_ARR+=($(echo $VMSTORE))
+	HOST_ARR+=($(echo $HOST))
 	PASSWORD_ARR+=($(echo -e "$DECRYPTED_PASSWORD"))
 }
 ############################################################
 get_userdata() {
 	USERNAME=$(cat $user_cache)
-	VMSTORE=$(cat $host_cache)
+	HOST=$(cat $host_cache)
 	ENCRYPTED_PASSWORD=$(cat $PASSFILE)
 }
 ############################################################
@@ -346,7 +497,7 @@ check_cache() {
 		((c++))
 	fi
 
-	if [ -z $VMSTORE ]; then
+	if [ -z "$HOST" ]; then
 		echo "ERROR: VMstore not specified or cache does not exist."
 		((c++))
 	fi
@@ -365,7 +516,7 @@ check_user_data() {
 		setpass "$DECRYPTED_PASSWORD"
 	fi
 	if [ ! -z $gethost ]; then
-		echo -e $VMSTORE>$host_cache
+		echo -e $HOST>$host_cache
 	fi
 
 	if [[ (  -f  $PASSFILE )   && (  -f  $host_cache )  && ( -f $user_cache)  ]]; then
@@ -374,7 +525,7 @@ check_user_data() {
 		check_cache
 	else
 		echo -e $USERNAME > $user_cache
-		echo -e $VMSTORE > $host_cache
+		echo -e $HOST > $host_cache
 		setpass "$DECRYPTED_PASSWORD"
 		check_cache
 	fi
@@ -388,7 +539,7 @@ check_inputfile() {
 		while read user pass vmstore; do
 			USERNAME_ARR+=($(echo $user))
 			PASSWORD_ARR+=($(echo -e "$pass"))
-			VMSTORE_ARR+=($(echo -e "$vmstore"))
+			HOST_ARR+=($(echo -e "$vmstore"))
 		done<$TMP_INPUTFILE
 }
 ############################################################
@@ -424,12 +575,12 @@ check_ha(){
 ############################################################
 do_logout(){
 	check_sed
-	local url="v310/session/logout"
+	local url="session/logout"
 	local message="Logging out.."
 	local human=
-	writelog "$message --> $url"
-       	curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie https://$VMSTORE/api/$url 2>/dev/null |eval $PRE_SED
-	rm -f $cookie 2>/dev/null
+	writelog "$message --> ${API_BASE_URL}/$url"
+       	curl -i -k -X POST -H 'Content-Type: application/json' -b $cookie ${API_BASE_URL}/$url 2>/dev/null |eval $PRE_SED
+	clear_cache
 	exit
 }
 ###################################################################
@@ -438,10 +589,45 @@ if [ $# == 0 ]; then
 fi
 
 
-while getopts "qE:YMNWHQP:hUCSU:R:TXgdLsralAViv:F:xncZu:p:" OPT_NAME; do
+while getopts "zwm:B:Je:jOqE:YMNWHQP:h:UCS:U:R:TXgdLsr:alAVivF:xncZu:p:" OPT_NAME; do
    case $OPT_NAME in
         ("\?") usage;;
+        ("j")  tgc_vmstore_info=1;;
+        ("B")  if [ -n $OPTARG ]; then
+			case $OPTARG in
+			0)	get_bundle=1;nightly=1;;
+			1)	get_bundle=1;interactive=1;;
+			esac
+		fi
+		;;
         ("X")  set -x;verbose=1;;
+        ("m")  if [ -n $OPTARG ]; then
+			case $OPTARG in
+			0)	statsum=1;;	
+			1)	realtime_statsum=1;;
+			esac
+		fi
+		;;
+        ("e")  if [ -n $OPTARG ]; then
+			case $OPTARG in
+			0)	nwconfig=1;;
+			1)	check_encryption=1;;
+			2)	license=1;human=1;;
+			3)	check_temp=1;;
+			4)	get_datetime=1;;
+			5)	check_autosupport=1;;
+			6)	hconfig=1;;
+			7)	get_ipmi=1;;
+			8)	lacp=1;;
+			9)	upgrade_info=1;;
+			10)	cluster_config=1;;
+			11)	replication_config=1;;
+			12)	smb_settings=1;;
+			13)	system_properties=1;;
+			*)	usage;;
+			esac
+		fi
+		;;
 	("E") 	if [ "$OPTARG" == 0 ]; then
 			getaes=1
 		else
@@ -452,7 +638,7 @@ while getopts "qE:YMNWHQP:hUCSU:R:TXgdLsralAViv:F:xncZu:p:" OPT_NAME; do
 			setaes=1
 		fi
 		;;
-	("U") statsum=1;;
+	
 	("F")   if [ -f $OPTARG ]; then
 			INPUTFILE=$OPTARG
 		else
@@ -461,17 +647,23 @@ while getopts "qE:YMNWHQP:hUCSU:R:TXgdLsralAViv:F:xncZu:p:" OPT_NAME; do
 		ifile=1
 		logtofile=1
 		;;
-	("W") smbt=1;;
+	("W") fshare=1;;
 	("N") notpol=1;;
-        ("H") human=;;
+        ("J") human=;;
         ("Q") noquote=1;;
         ("Z") space=1;;
         ("q") getuser=1;human=1;;
-        ("T") tcenter=1;;
         ("s") getsnap=1;;
         ("C") csession=1;;
-        ("S") session=1;;
-	("v") 	VMSTORE=$OPTARG
+        ("S") 	if [ -n $OPTARG ]; then
+			case $OPTARG in
+				0) 	session=1;;
+				1)	tcenter=1;;
+				2)	csession=1;;
+			esac
+		fi
+		;;
+	("h") 	HOST=$OPTARG
 		gethost=1
 		;;
         ("g") sg=1;;
@@ -480,8 +672,17 @@ while getopts "qE:YMNWHQP:hUCSU:R:TXgdLsralAViv:F:xncZu:p:" OPT_NAME; do
         ("R") role=$OPTARG;;
 	("U")	username="$OPTARG";;
 	("N")	newpass="$OPTARG";np=1;;
-        ("r") compute=1;;
-	("L") license=1;human=1;;
+        ("r") 
+		if [ -n $OPTARG ]; then
+			case $OPTARG in
+				0) 	compute=1;;
+				1)	host_resources=1;;
+				2)	hypervisor_data=1;;
+				3)	hypervisor_config=1;;
+			esac
+		fi
+		;;
+	("L") check_op_status=1;;
         ("d") dprop=1;;
         ("i") info=1;human=1;;
         ("n") notify=1;;
@@ -489,9 +690,11 @@ while getopts "qE:YMNWHQP:hUCSU:R:TXgdLsralAViv:F:xncZu:p:" OPT_NAME; do
         ("l") logtofile=1;;
         ("c") clear=1;;
         ("a") appliance=1;;
+	("T")  restart_tomcat=1;;
         ("x") verbose=1;;
         ("V") vm=1;;
-        ("h") hconfig=1;;
+        ("H") initiate_failover=1;;
+        ("z") reauth=1;;
         ("u")   if [ ! -z $OPTARG ]; then
 			USERNAME="$OPTARG"
 		else
@@ -512,10 +715,10 @@ done
 
 
 
+get_serial
 if [ ! -z $clear ]; then
-	get_serial
 	writelog "Cleared any previous cached cookie, host and password information"
-	clear_data
+	clear_cache
 	if [ $# == 1 ]; then
 		exit
 	fi
@@ -524,9 +727,8 @@ fi
 if [  -z $ifile ]; then
 	check_user_data
 
-
-	if [ ! -z $not_vmstore ] && [ -z $VMSTORE ]; then
-		echo "ERROR: Must specify VMStore with -s option"
+	if [ ! -z $not_vmstore ] && [ -z $HOST ]; then
+		echo "ERROR: Must specify $DESTNAME with -s option"
 		usage
 	fi
 
@@ -543,16 +745,25 @@ else
 	check_inputfile
 fi
 ###################################################################
+
+###################################################################
 for i in "${!USERNAME_ARR[@]}"; do
 	USERNAME=${USERNAME_ARR[$i]}
 	DECRYPTED_PASSWORD=${PASSWORD_ARR[$i]}
-	VMSTORE=${VMSTORE_ARR[$i]}
+	HOST=${HOST_ARR[$i]}
+	API_BASE_URL="https://$HOST/api/$API_VERSION"
+
+	if [ -z $HOST ]; then
+		writelog "ERROR: Destination Host ($DESTNAME/TGC) not specified"
+		exit
+	fi
+
 	if [ ! -z $ifile ]; then
-		logfile=/tmp/${SCRIPT}.${VMSTORE}_rest-api.output.log
+		logfile=/tmp/${SCRIPT}.${HOST}_rest-api.output.log
 		rm -f $logfile 2>/dev/null
 	fi
 	if [ ! -z $verbose ]; then
-		echo ${USERNAME_ARR[$i]} ${PASSWORD_ARR[$i]} ${VMSTORE_ARR[$i]}
+		echo ${USERNAME_ARR[$i]} ${PASSWORD_ARR[$i]} ${HOST_ARR[$i]}
 	fi
 
 
@@ -560,8 +771,14 @@ for i in "${!USERNAME_ARR[@]}"; do
 		writelog "Using user=$ARR_USERNAME password_hash=$ENCRYPTED_PASSWORD password=$DECRYPTED_PASSWORD"
 	fi
 
+	if [ -f $cookie ] && [ $(check_file_time $cookie) == 1 ]; then
+		writelog "Cookie older than $COOKIE_RETENTION Minutes"
+		clear_cache
+	fi
 	if [ ! -z $ifile ] || [ ! -f $cookie ]; then
 		setcookie
+	else
+		check_cookie
 	fi
 
 	if [ $(grep -q "^Set.*Http" $cookie; echo $?) != 0 ]; then
@@ -572,101 +789,208 @@ for i in "${!USERNAME_ARR[@]}"; do
 			exit 1
 		fi
 	fi
-###################################################################
+
+
+	if [ ! -z $system_properties ]; then
+		get_query "default/default/systemProperty" "Displaying VMStore System Properties"
+	fi
+
+	if [ ! -z $get_datetime ]; then
+		get_query "appliance/default/dateTime" "Displaying VMStore current Date/Time"
+	fi
+
+	if [ ! -z $check_temp ]; then
+		get_query "appliance/default/temperature" "Displaying VMStore current Temperature Settings"
+	fi
+
+	if [ ! -z $check_autosupport ]; then
+		get_query "appliance/default/support" "Displaying VMStore Autosupport Settings"
+	fi
 
 
 	if [ ! -z $hconfig ]; then
-		get_query "v310/datastore/default/hypervisorManagerConfig" "Querying HypervisorManagerConfig" $human
+		get_query "datastore/default/hypervisorManagerConfig" "Querying HypervisorManagerConfig" $human
 	fi
 
 	if [ ! -z $appliance ]; then
-		get_query "v310/appliance" "Obtaining Appliance info" $human
+		get_query "appliance" "Obtaining List of al Tintri Appliances" $human
 	fi
 
 	if [ ! -z $vm ]; then
-		get_query "v310/vm" "Obtaining VM info" $human
+		get_query "vm" "Obtaining VM info" $human
 	fi
 
 	if [ ! -z $info ]; then
-		get_query "v310/appliance/default/info" "Obtaining BASIC Appliance info"  $human
+		get_query "appliance/default/info" "Obtaining BASIC Appliance info"  $human
 	fi
+
 	if [ ! -z $statsum ]; then
-		get_query "v310/datastore/default/statsSummary" "Obtaining StatsSummary info"  $human
+		get_query "datastore/default/statsSummary" "Obtaining StatsSummary info"  $human
+	fi
+
+	if [ ! -z $realtime_statsum ]; then
+		get_query "datastore/default/statsRealtime" "Obtaining Real-oime StatsSummary info"  $human
 	fi
 
 	if [ ! -z $api_info ]; then
+		API_BASE_URL="https://$HOST/api/"
 		get_query "info" "Obtaining BASIC REST-API info"   $human
+		exit
 	fi
 
 	if [ ! -z $notify ]; then
-		get_query "v310/appliance/default/notificationPolicy" "Obtaining Notification Policy Info" $human
+		get_query "appliance/default/notificationPolicy" "Obtaining Notification Policy Info" $human
 	fi
 
 	if [ ! -z $compute ]; then
-		get_query "v310/computeResource" "Obtaining VMStore ComputeResource Info"  $human
+		get_query "computeResource" "Obtaining $DESTNAME ComputeResource Info"  $human
 	fi
 
 	if [ ! -z $dprop ]; then
-		get_query "v310/datastore" "Obtaining VMStore Datastore Info" $human 
+		get_query "datastore" "Obtaining $DESTNAME Datastore Info" $human 
 	fi
 
 	if [ ! -z $license ]; then
-		get_query "v310/license" "Obtaining VMStore License Info" $human
+		get_query "license" "Obtaining $DESTNAME License Info" $human
 	fi
 
 	if [ ! -z $session ]; then
-		get_query "v310/session/active" "Obtaining VMStore Active Sessions" $human
+		get_query "session/active" "Obtaining $DESTNAME Active Sessions" $human
 	fi
 
 	if [ ! -z $csession ]; then
-		get_query "v310/session/current" "Obtaining CURRENT VMStore Active Sessions" $human
+		get_query "session/current" "Obtaining CURRENT $DESTNAME Active Sessions" $human
 	fi
 
 	if [ ! -z $tcenter ]; then
-		get_query "v310/session/active" "Obtaining VMStore Active Sessions for user=tintricenter" $human
+		get_query "session/active" "Obtaining $DESTNAME Active Sessions for user=tintricenter" $human
 	fi
 
 
 	if [ ! -z $sg ]; then
-		get_query "v310/servicegroup" "Obtaining VMStore ServiceGroup Info" $human
+		get_query "servicegroup" "Obtaining $DESTNAME ServiceGroup Info" $human
 	fi
 
 
 	if [ ! -z $getsnap ]; then
-		get_query "v310/snapshot" "Obtaining VMStore Snapshot Info" $human
+		get_query "snapshot" "Obtaining $DESTNAME Snapshot Info" $human
 	fi
 	if [ ! -z $space ]; then
-		get_query "v310/datastore/default/statsSummary" "Obtaining VMStore Stat Summary" $human
+		get_query "datastore/default/statsSummary" "Obtaining $DESTNAME Stat Summary" $human
 	fi
 	if [ ! -z $resetpw ]; then
-		reset_query "v310/userAccount/resetPassword" "Resetting Password" $human
+		reset_query "userAccount/resetPassword" "Resetting Password" $human
 		getuser=1;human=1;
 	fi
 
 	if [ ! -z $getuser ]; then
-		get_query "v310/userAccount" "Obtaining List of User Accounts " $human
+		get_query "userAccount" "Obtaining List of User Accounts " $human
 	fi
 
 
 	if [ ! -z $notpol ]; then
-		get_query "v310/appliance/default" "Returning all VMStores Notification Properties"
+		get_query "appliance/default" "Returning all $DESTNAME Notification Properties"
 	fi
 
 	if [ ! -z  $getaes ]; then
-		get_query "v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type" "Checking the AES Enctyption Type" 3 "Encryption Type"
-	fi
-	if [ ! -z  $setaes ]; then
-		put_query "v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=$enctype&persist=true" "Setting the AES Enctyption Type to $enctype"
-		get_query "v310/internal/admin/systemProperty?key=com.tintri.authd.encryption.type" "Checking the AES Enctyption Type" 3 "Encryption Type"
+		get_query "internal/admin/systemProperty?key=com.tintri.authd.encryption.type" "Checking the AES Enctyption Type" 3 "Encryption Type"
 	fi
 
-	if [ ! -z $smbt ]; then
-		if [ ! -z $uuid ]; then
-			get_query "v310/datastore/$uuid/smbSettings" "Returning all VMStores SMB Properties"
+	if [ ! -z  $setaes ]; then
+		put_query "internal/admin/systemProperty?key=com.tintri.authd.encryption.type&value=$enctype&persist=true" "Setting the AES Enctyption Type to $enctype"
+		get_query "internal/admin/systemProperty?key=com.tintri.authd.encryption.type" "Checking the AES Enctyption Type" 3 "Encryption Type"
+	fi
+
+	if [ ! -z $fshare ]; then
+		if [  -z $uuid ]; then
+			uuid="default"
 		fi
+		get_query "datastore/$uuid/fileShare" "Returning all $DESTNAME SMB FileShare Properties"
 		
 	fi
-	writelog "Writing results to $logfile"
+	if [ ! -z $upgrade_info ]; then
+			get_query "appliance/default/upgradeInfo" "Viewing $DESTNAME Upgrade Info"
+	fi
+
+	if [ ! -z $tgc_vmstore_info ]; then
+			get_query "vmstore" "Returns all VMstores and their properties in the Tintri Global Center cluster."
+	fi
+
+	if [ ! -z $check_encryption ]; then
+			get_query "appliance/default/encryptionInfo" "Returning VMStore Disk Encryption Information"
+	fi
+	if [ ! -z $get_ipmi ]; then
+			get_query "appliance/default/ipmi" "Displaying VMStore IPMI Configuration"
+	fi
+
+	if [ ! -z $nwconfig ]; then
+			get_query "appliance/default/info" "Returning VMStore DNS, IP and Network Interface Configuration"
+			get_query "appliance/default/dns" "q"
+			get_query "appliance/default/ips" "q"
+	fi
+
+	if [ ! -z $lacp ]; then
+			get_query "appliance/default/lacp" "Displaying VMStore LACP Configuration"
+	fi
+
+	if [ ! -z $upgrade_info ]; then
+			get_query "appliance/default/upgradeInfo" "Displaying VMStore Upgrade information, state, checksum, version,errors"
+	fi
+
+	if [ ! -z $check_op_status ]; then
+			get_query "appliance/default/operationalStatus" "Returning VMStore Current Operational Status"
+	fi
+
+	if [ ! -z $get_bundle ]; then
+		if [ ! -z $nightly ]; then
+			post_query "autosupport/nightly" "Generating a Nightly Support Bundle"
+			exit
+		elif [ ! -z $interactive ]; then
+			post_query "autosupport/support" "Generating a Full (Interactive) Support Bundle"
+			exit
+		fi
+	fi
+
+	if [ ! -z $initiate_failover ]; then
+		verify_user "Initiate a Controller failover"
+		post_query  "appliance/default/hafailover" "Initiating a Controller Failobver"
+		exit
+	fi 						
+
+	if [ ! -z $restart_tomcat ]; then
+			verify_user "restart the tomcat web service"
+			post_query "appliance/default/restartWebServer"  "Restarting Tomcat Web Service"
+			exit
+	fi
+
+	if [ ! -z $cluster_config ]; then
+		 get_query "appliance/default/clusterConfig" "Returning VMStore Cluster Configuration"
+	fi
+
+	if [ ! -z $host_resources ]; then
+		 get_query "datastore/default/hostResources" "Returning VMStore Host resources, resource pools, cluster,etc"
+	fi
+
+	if [ ! -z $hypervisor_data ]; then
+		 get_query "datastore/default/hypervisorDatastore" "Returning VMStore Hypervisor Datastores"
+	fi
+
+	if [ ! -z $hypervisor_config ]; then
+		 get_query "datastore/default/hypervisorManagerconfig" "Returning VMStore Hypervisor Manager Configuration Information"
+	fi
+
+	if [ ! -z $replication_config ]; then
+		 get_query "datastore/default/replicationInfo" "Returning VMStore Replication Configuration"
+	fi
+
+	if [ ! -z $smb_settings ]; then
+		 get_query "datastore/default/smbSettings" "Returning VMStore SMB settings"
+	fi
+
+	if [ -f $logfile ]; then
+		writelog "Writing results to $logfile"
+	fi
+
 	if [ ! -z $logout ] || [ ! -z $ifile ]; then
 		do_logout
 	fi
